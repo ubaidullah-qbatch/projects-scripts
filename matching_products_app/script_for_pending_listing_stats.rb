@@ -6,7 +6,7 @@
 
 ##### AMAZON #######
 global = []
-User.active.where.not(id: 3)each_with_index do |user, index|
+User.active.each_with_index do |user, index|
   puts "#{user.email} -- #{index}"
   Apartment::Tenant.switch(user.tenant_name) do
     accounts_ids = Account.amazon_with_keys.enabled.valid.ids
