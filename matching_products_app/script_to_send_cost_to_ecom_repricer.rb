@@ -1,38 +1,89 @@
-user = User.find_by(email: "docsalesllc@heonboard.com")
+user = User.find_by(id: 3)
 user.switch!
 
+AccountsProduct.where(account_id: 31, sku: 'GINnac600').first
+AccountsProduct.where(account_id: 31, sku: 'GINnac600').first.default_supplier
 
-account = Account.find_by(marketplace_partner_id: 'A36CKLEC46FGAN')
 repricer_data = []
-repricer_data << {marketplace_account_id: account.marketplace_partner_id, products: []}
+Account.enabled.valid.active.repricer_external.where(id: 31).each do |account|
+  next if account.marketplace_partner_id.blank?
+  
+  # repricer_data << {marketplace_account_id: account.marketplace_partner_id, products: []}
+  products = []
+  if account.walmart?
+    index = 0
+    listed_on = 'walmart'
+    account.accounts_products.uploaded.
+    where(is_mismatch: [false, nil]).
+    joins(:suppliers).where('suppliers.is_default = ?', true).
+    find_each do |wm_listing|
+      puts index + 1
+      index += 1
+      supplier = wm_listing.default_supplier
+      next if supplier.blank?
 
-wholesale_platform_ids = Platform.wholesale.ids
-amazon_listings = account.amazon_listings.uploaded.where(is_mismatch: [false, nil], disable_feeds: false).joins(:amazon_suppliers).where('amazon_suppliers.is_default = ?', true);nil
-if account.repricer_external?
-  index = 0
-  amazon_listings.find_each do |amz_listing|
-    puts index + 1
-    index += 1
-    # amz_listing = AmazonListing.find_by(sku: '04182022_1437')
-    supplier = amz_listing.default_supplier
-    next if supplier.blank?
+      platform = supplier.platform
+      setting = platform.setting
 
-    platform = supplier.platform
-    setting = platform.setting
+      price_with_multiplier, shipping_fee = total_price_plus_shipping(supplier, setting)
+      next if price_with_multiplier.zero?
+      
+      price_with_multiplier += ([supplier.quantity_multiplier.to_i, 1].max * account.warehouse_charges.to_f) + 3.5 if !wm_listing.mp_fi && (supplier.ship_to_warehouse || account.two_step_enabled)
+      products << {sku: wm_listing.sku, cost: price_with_multiplier.round(2), shipping_fee: shipping_fee.round(2), tag: supplier.name}
+    end;nil
+  else
+    index = 0
+    listed_on = 'amazon'
+    products = []
+    account.amazon_listings.uploaded.
+    where(is_mismatch: [false, nil]).
+    joins(:amazon_suppliers).where('amazon_suppliers.is_default = ?', true).
+    where("name NOT IN (?)", Platform::REFRESHABLE_PLATFORMS_NAMES).find_each do |amz_listing|
+      puts index + 1
+      index += 1
+      supplier = amz_listing.default_supplier
+      next if supplier.blank?
 
-    price_with_multiplier = supplier.price * [supplier.quantity_multiplier.to_i, 1].max
-    next if price_with_multiplier.zero?
+      platform = supplier.platform
+      setting = platform.setting
 
-    shipping_fee = [supplier.shipping_fee.to_f, setting&.shipping_fee.to_f].max
-    shipping_fee = setting&.non_prime_shipping.to_f if setting&.name == 'amazon' &&
-                                                          !setting&.has_prime_acc &&
-                                                          price_with_multiplier < 25.0 &&
-                                                          supplier.shipping_fee.to_f.zero?
-    
-    price_with_multiplier += ([supplier.quantity_multiplier.to_i, 1].max * account.warehouse_charges.to_f) + 3.5 if wholesale_platform_ids.exclude?(supplier.platform_id) && !amz_listing.mp_fi && (supplier.ship_to_warehouse || account.two_step_enabled)
-    partner_id_row = repricer_data.find{|a| a[:marketplace_account_id] == account.marketplace_partner_id}
-    partner_id_row[:products] << {sku: amz_listing.sku, cost: price_with_multiplier.round(2), shipping_fee: shipping_fee, tag: supplier.name}
-  end;nil
+      price_with_multiplier, shipping_fee = total_price_plus_shipping(supplier, setting)
+      next if price_with_multiplier.zero?
+
+      price_with_multiplier += ([supplier.quantity_multiplier.to_i, 1].max * account.warehouse_charges.to_f) + 3.5 if !amz_listing.mp_fi && (supplier.ship_to_warehouse || account.two_step_enabled)
+      products << {sku: amz_listing.sku, cost: price_with_multiplier.round(2), shipping_fee: shipping_fee.round(2), tag: supplier.name}
+    end
+  end
+
+  products.in_groups_of(1000, false).each_with_index do |products_batch, index|
+    puts index
+    final_arr = {marketplace_account_id: account.marketplace_partner_id, products: products_batch}
+    response = send_data_to_repricer(final_arr, user.api_key_repricer, listed_on)
+    pp JSON.parse response.body
+  end
+  
+
+  response = send_data_to_repricer(repricer_data, user.api_key_repricer, listed_on)
+  pp JSON.parse response.body
+
+  skus = products.map{|a| a[:sku]}.compact
+  if account.walmart?
+    AccountsProduct.where(account_id: account.id).where(sku: skus).
+    update_all(price_changed: false, price_updated_at: Time.now) if response.present? && response.code == 200
+  else
+    AmazonListing.where(account_id: account.id).where(sku: skus).
+    update_all(price_changed: false, price_updated_at: Time.now) if response.present? && response.code == 200
+  end
+end
+
+def total_price_plus_shipping(supplier, setting)
+  price_with_multiplier = supplier.price * [supplier.quantity_multiplier.to_i, 1].max
+  shipping_fee = [supplier.shipping_fee.to_f, setting&.shipping_fee || 0].max
+  shipping_fee = setting&.non_prime_shipping.to_f if setting&.name == 'amazon' &&
+                                                            !setting&.has_prime_acc &&
+                                                            price_with_multiplier < 25.0 &&
+                                                            supplier.shipping_fee.to_f.zero?
+  [price_with_multiplier, shipping_fee]
 end
 
 
@@ -52,7 +103,4 @@ def send_data_to_repricer(repricer_data, api_key_repricer, listed_on)
   end
   response
 end
-
-response = send_data_to_repricer(repricer_data, user.api_key_repricer, 'amazon')
-JSON.parse response.body
 
