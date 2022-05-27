@@ -35,10 +35,11 @@ Account.enabled.valid.active.repricer_external.where(id: 31).each do |account|
     index = 0
     listed_on = 'amazon'
     products = []
+    skus = ["VARTurkesterone350mg", "VARglutathione250"] 
     account.amazon_listings.uploaded.
     where(is_mismatch: [false, nil]).
-    joins(:amazon_suppliers).where('amazon_suppliers.is_default = ?', true).
-    where("name NOT IN (?)", Platform::REFRESHABLE_PLATFORMS_NAMES).find_each do |amz_listing|
+    where(sku: skus).
+    joins(:amazon_suppliers).where('amazon_suppliers.is_default = ?', true).find_each do |amz_listing|
       puts index + 1
       index += 1
       supplier = amz_listing.default_supplier
@@ -78,7 +79,7 @@ end
 
 def total_price_plus_shipping(supplier, setting)
   price_with_multiplier = supplier.price * [supplier.quantity_multiplier.to_i, 1].max
-  shipping_fee = [supplier.shipping_fee.to_f, setting&.shipping_fee || 0].max
+  shipping_fee = prioritised_shipping_fee(supplier, setting)
   shipping_fee = setting&.non_prime_shipping.to_f if setting&.name == 'amazon' &&
                                                             !setting&.has_prime_acc &&
                                                             price_with_multiplier < 25.0 &&
@@ -86,6 +87,15 @@ def total_price_plus_shipping(supplier, setting)
   [price_with_multiplier, shipping_fee]
 end
 
+def prioritised_shipping_fee(supplier, setting)
+  if supplier.shipping_fee_lock
+    supplier.manual_shipping_fee
+  elsif setting&.shipping_fee_lock
+    setting&.shipping_fee
+  else
+    supplier.shipping_fee
+  end
+end
 
 def send_data_to_repricer(repricer_data, api_key_repricer, listed_on)
   response = {}
@@ -103,4 +113,5 @@ def send_data_to_repricer(repricer_data, api_key_repricer, listed_on)
   end
   response
 end
+
 

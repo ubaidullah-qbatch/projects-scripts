@@ -9,7 +9,7 @@ global = []
 User.active.each_with_index do |user, index|
   puts "#{user.email} -- #{index}"
   Apartment::Tenant.switch(user.tenant_name) do
-    accounts_ids = Account.amazon_with_keys.enabled.valid.ids
+    accounts_ids = Account.amazon_with_keys.enabled.valid.active.ids
     listings_arr = JSON.parse(AmazonListing.where(listing_status: [:added, :pending_upload]).where(account_id: accounts_ids).joins(:product).where("amazon_listings.created_at < ?", 1.hour.ago).select("listing_status, error_type, products.price, products.brand, products.upc, sku, account_id, listing_feed_error").to_json)
     brand_restricted = listings_arr.select{|a| a['error_type'] == 'brand_restricted' }.count
     system_error = listings_arr.select{|a| a['error_type'] == 'system_error' }.count
@@ -47,8 +47,8 @@ wm_global = []
 User.active.where.not(id: 3).each_with_index do |user, index|
   puts "#{user.email} -- #{index}"
   Apartment::Tenant.switch(user.tenant_name) do
-    accounts_ids = Account.walmart_with_keys.enabled.valid.ids
-    listings_arr = JSON.parse(AccountsProduct.where(listing_status: [:added, :pending_upload]).where(account_id: accounts_ids).joins(:product).where("accounts_products.created_at < ?", 1.hour.ago).select("listing_status, error_type, products.price, products.brand, products.upc, sku, account_id, accounts_products.error_log").to_json)
+    accounts_ids = Account.walmart_with_keys.enabled.valid.active.ids
+    listings_arr = JSON.parse(AccountsProduct.where(listing_status: [:added, :pending_upload, :errored]).where(account_id: accounts_ids).joins(:product).where("accounts_products.created_at < ?", 1.hour.ago).select("listing_status, error_type, products.price, products.brand, products.upc, sku, account_id, accounts_products.error_log").to_json)
     brand_restricted = listings_arr.select{|a| a['error_type'] == 'brand_restricted' }.count
     system_error = listings_arr.select{|a| a['error_type'] == 'system_error' }.count
     product_not_available = listings_arr.select{|a| a['error_type'] == 'product_not_available' }.count
