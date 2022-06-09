@@ -31,30 +31,35 @@ csv = CSV.parse(File.read('public/inventory_restricted_brands.csv'), headers: tr
 
 
 task run_brand_stats_script: [:environment] do
-  arr = JSON.parse(UserBrand.where(marketplace: 'walmart', inventory_restricted: true).joins(:brand).distinct.select("restricted_reason, name").to_json).each{|row| row.delete('id')}
-  system_brands = arr.map{|row| row['name']}
+  arr = JSON.parse(UserBrand.where(marketplace: 'walmart', inventory_restricted: true).where("restricted_reason like ? OR restricted_reason like ?", '%copyright%', 'trademark').joins(:brand).distinct.select("restricted_reason, name").to_json).each{|row| row.delete('id')}
+  system_brands = arr.map{|row| row['name']}.compact.uniq
 
   arr = []
   User.active.each_with_index do |user, index|
     puts "email: #{user.email} -- index: #{index}"
     Apartment::Tenant.switch(user.tenant_name) do
+      platform = Platform.find_by(name: 'walmart')
+      local_brands = platform.restricted_brands.pluck(:name);nil
+
       ids = Account.walmart.enabled.valid.active.ids
-      c = 0
+      global_retire_count, local_retire_count = 0, 0
       AccountsProduct.uploaded.where(account_id: ids).where.not(brand: [nil, '']).in_batches(of: 1000) do |listings_batch|
-        c += listings_batch.where("brand IN (?)", system_brands).count
-        # puts "listings_might_retire: #{c}"
+        global_retire_count += listings_batch.where("brand IN (?)", system_brands).count
+        local_retire_count += listings_batch.where("brand IN (?)", local_brands).count
+        puts "GLOBAL: listings_might_retire: #{global_retire_count}"
+        puts "LOCAL: listings_might_retire: #{local_retire_count}"
       end
+      
       total_active_listings = AccountsProduct.uploaded.where(account_id: ids).count
-      total_active_listings_with_brands = AccountsProduct.uploaded.where(account_id: ids).where.not(brand: [nil, '']).count
-      if c.positive?
-        hash = {email: user.email, total_active_listings: total_active_listings, total_active_listings_with_brands: total_active_listings_with_brands, active_listings_might_retire: c}
+      if global_retire_count.positive? || local_retire_count.positive?
+        hash = {email: user.email, total_active_listings: total_active_listings, global_retire_count: global_retire_count, global_retire_percentage: ((global_retire_count/total_active_listings.to_f) * 100).round(2), local_retire_count: local_retire_count, local_retire_percentage: ((local_retire_count/total_active_listings.to_f) * 100).round(2)}
         puts hash
         arr << hash
       end
     end
     puts "arr count: #{arr.count}"
   end
-  File.open("public/listings_might_retire_with_inventory_restricted_brands.json", 'w') {|file| file.write(arr.to_json)}
+  File.open("public/listings_might_retire_with_copyright_trademark_brands.json", 'w') {|file| file.write(arr.to_json)}
 end
 
 user = User.find_by(email: "alexandradirect@heonboard.com")

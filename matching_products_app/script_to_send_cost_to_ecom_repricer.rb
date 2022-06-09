@@ -1,11 +1,11 @@
-user = User.find_by(id: 3)
+user = User.find_by(email: 'bowhemilton75325@gmail.com')
 user.switch!
 
 AccountsProduct.where(account_id: 31, sku: 'GINnac600').first
 AccountsProduct.where(account_id: 31, sku: 'GINnac600').first.default_supplier
 
 repricer_data = []
-Account.enabled.valid.active.repricer_external.where(id: 31).each do |account|
+Account.enabled.valid.active.repricer_external.each do |account|
   next if account.marketplace_partner_id.blank?
   
   # repricer_data << {marketplace_account_id: account.marketplace_partner_id, products: []}
