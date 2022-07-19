@@ -1,4 +1,4 @@
-user = User.find_by(email: 'bowhemilton75325@gmail.com')
+user = User.find_by(email: 'theredmonkeystorellc@gmail.com')
 user.switch!
 
 AccountsProduct.where(account_id: 31, sku: 'GINnac600').first
@@ -35,10 +35,8 @@ Account.enabled.valid.active.repricer_external.each do |account|
     index = 0
     listed_on = 'amazon'
     products = []
-    skus = ["VARTurkesterone350mg", "VARglutathione250"] 
     account.amazon_listings.uploaded.
     where(is_mismatch: [false, nil]).
-    where(sku: skus).
     joins(:amazon_suppliers).where('amazon_suppliers.is_default = ?', true).find_each do |amz_listing|
       puts index + 1
       index += 1
@@ -106,7 +104,9 @@ def send_data_to_repricer(repricer_data, api_key_repricer, listed_on)
       'Content-Type' => 'application/json',
       'Authorization' => "Token #{api_key_repricer}"
     }
-    response = RestClient.post("https://repricer.ecomcircles.com/api/v1/#{api_url}", { data: repricer_data }.to_json, headers)
+    # JSON.parse ({ data: repricer_data.to_json }.to_json)
+    response = Mechanize.new.post("https://repricer.ecomcircles.com/api/v1/#{api_url}", { 'data' => repricer_data}.to_json, headers)
+    response = RestClient.post("https://repricer.ecomcircles.com/api/v1/#{api_url}", { 'data' => repricer_data }, headers)
   rescue Exception => e
     File.open("public/repricer_api_failed_#{Apartment::Tenant.current}_#{DateTime.now.strftime('%Y%m%d%H%M%S')}.json", 'w') {|file| file.write repricer_data.to_json}
     CodeException.insert_exception('Send Cost Repricer ECS READER', e, {listed_on: listed_on})
