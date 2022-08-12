@@ -28,3 +28,7 @@ amz_arr.each do |r|
 end;nil
 end;nil
 csv = CSV.parse(File.read('public/matt_amz_manual_restricted_brands.csv'), headers: true)
+
+
+brands = Platform.find_by(name: 'walmart').brands.where("platform_brands.surety >= ? AND blacklist = ? AND source = ?", 75, true, PlatformBrand.sources['manual']).where("name IN (?)", b).pluck("brands.name")
+skip = b - brands
