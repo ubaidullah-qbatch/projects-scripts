@@ -1,9 +1,19 @@
-Dir['/home/ubuntu/apps/matching_products_app/*'].each do |name|
-  if `du -sh #{name}`.include?('G')
+Dir['public/walmart_reports/item/*/*/*'].each do |name|
+  if `du -sh #{name}`.include?('M')
     puts "#{name} -> " + `du -sh #{name}`
     puts "\n"
   end
 end;nil
+
+## Remove Old public/inventory_files/amazon files
+Dir['public/inventory_files/amazon/*/*/*'].each_with_index do |path, index|
+  timestamp = path.split('/').last.split('.').first.split('-').first
+   if timestamp.to_datetime < 1.day.ago
+    `rm #{path}`
+    puts "removed file #{path} -- #{index}"
+  end
+end;nil
+
 
 
 #SECONDARY
